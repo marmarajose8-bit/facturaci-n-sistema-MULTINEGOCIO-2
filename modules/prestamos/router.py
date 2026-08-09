@@ -4,12 +4,13 @@ from pydantic import BaseModel
 from datetime import date
 
 from core.database import get_db
-from core.models import Empeno
+from core.models import Empeno, Comercio
 
 router = APIRouter(prefix="/prestamos", tags=["Préstamos Prendarios y Empeños - RYM"])
 
 
 class ContratoEmpenoRYM(BaseModel):
+    comercio_id: int
     cliente_nombre: str
     cedula_cliente: str
     bien_prendario: str  # Ej: "Pasola Honda Lead 125 - Chassis XXXXX"
@@ -20,12 +21,22 @@ class ContratoEmpenoRYM(BaseModel):
     fecha_vencimiento_inamovible: date
 
 
+def _validar_comercio(comercio_id: int, db: Session) -> Comercio:
+    comercio = db.query(Comercio).filter(Comercio.id == comercio_id).first()
+    if not comercio:
+        raise HTTPException(status_code=404, detail=f"Comercio {comercio_id} no encontrado")
+    return comercio
+
+
 @router.post("/registrar-empeno-rym")
 def registrar_empeno_rym(datos: ContratoEmpenoRYM, db: Session = Depends(get_db)):
+    comercio = _validar_comercio(datos.comercio_id, db)
+
     interes_calculado = datos.monto_prestado * (datos.tasa_interes_mensual / 100)
     total_adeudado = datos.monto_prestado + interes_calculado
 
     empeno = Empeno(
+        comercio_id=datos.comercio_id,
         cliente_nombre=datos.cliente_nombre,
         cedula_cliente=datos.cedula_cliente,
         bien_prendario=datos.bien_prendario,
@@ -43,9 +54,10 @@ def registrar_empeno_rym(datos: ContratoEmpenoRYM, db: Session = Depends(get_db)
     db.refresh(empeno)
 
     return {
-        "sistema": "RYM Inversiones - Préstamos Prendarios",
+        "sistema": f"{comercio.nombre_comercial} - Préstamos Prendarios",
         "estado": empeno.estado,
         "id": empeno.id,
+        "comercio_id": empeno.comercio_id,
         "cliente": empeno.cliente_nombre,
         "cedula": empeno.cedula_cliente,
         "garantia": empeno.bien_prendario,
@@ -58,8 +70,14 @@ def registrar_empeno_rym(datos: ContratoEmpenoRYM, db: Session = Depends(get_db)
 
 
 @router.get("/empenos")
-def listar_empenos(db: Session = Depends(get_db)):
-    empenos = db.query(Empeno).order_by(Empeno.id.desc()).all()
+def listar_empenos(comercio_id: int, db: Session = Depends(get_db)):
+    _validar_comercio(comercio_id, db)
+    empenos = (
+        db.query(Empeno)
+        .filter(Empeno.comercio_id == comercio_id)
+        .order_by(Empeno.id.desc())
+        .all()
+    )
     return [
         {
             "id": e.id,
@@ -74,13 +92,18 @@ def listar_empenos(db: Session = Depends(get_db)):
 
 
 @router.get("/empenos/{empeno_id}")
-def obtener_empeno(empeno_id: int, db: Session = Depends(get_db)):
-    empeno = db.query(Empeno).filter(Empeno.id == empeno_id).first()
+def obtener_empeno(empeno_id: int, comercio_id: int, db: Session = Depends(get_db)):
+    empeno = (
+        db.query(Empeno)
+        .filter(Empeno.id == empeno_id, Empeno.comercio_id == comercio_id)
+        .first()
+    )
     if not empeno:
         raise HTTPException(status_code=404, detail="Empeño no encontrado")
 
     return {
         "id": empeno.id,
+        "comercio_id": empeno.comercio_id,
         "cliente": empeno.cliente_nombre,
         "cedula": empeno.cedula_cliente,
         "garantia": empeno.bien_prendario,

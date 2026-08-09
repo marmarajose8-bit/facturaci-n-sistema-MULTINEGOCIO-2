@@ -1,15 +1,64 @@
-from sqlalchemy import Column, Integer, String, Float, Date, DateTime, ForeignKey
+from sqlalchemy import (
+    Column, Integer, String, Float, Date, DateTime, ForeignKey, UniqueConstraint
+)
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
 from core.database import Base
 
 
-class Factura(Base):
-    __tablename__ = "facturas"
+class Comercio(Base):
+    """Cada comercio (tenant) que contrata el SaaS. Todo lo demás cuelga de aquí."""
+    __tablename__ = "comercios"
 
     id = Column(Integer, primary_key=True, index=True)
-    nro_factura = Column(String, unique=True, index=True, nullable=False)
+    nombre_comercial = Column(String, nullable=False)
+    rnc = Column(String, unique=True, index=True, nullable=False)
+    email_contacto = Column(String, nullable=False)
+    plan = Column(String, default="basico")
+    activo = Column(String, default="si")  # "si" / "no" - simple por ahora, sin lógica de suspensión aún
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    facturas = relationship("Factura", back_populates="comercio")
+    empenos = relationship("Empeno", back_populates="comercio")
+    dominios = relationship("Dominio", back_populates="comercio")
+    secuencias_ncf = relationship("SecuenciaNCF", back_populates="comercio")
+
+
+class SecuenciaNCF(Base):
+    """
+    Rango de Números de Comprobante Fiscal (NCF) que la DGII autorizó a un comercio
+    para un tipo de comprobante específico (ej. B02 = Consumo, B01 = Crédito Fiscal).
+    El sistema consume esta secuencia automáticamente, nunca se escribe a mano.
+    """
+    __tablename__ = "secuencias_ncf"
+    __table_args__ = (
+        UniqueConstraint("comercio_id", "tipo_ncf", name="uq_comercio_tipo_ncf"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    comercio_id = Column(Integer, ForeignKey("comercios.id"), nullable=False, index=True)
+    tipo_ncf = Column(String, nullable=False)  # Ej: "B02" (Consumo), "B01" (Crédito Fiscal), "B14" (Regímenes Especiales)
+    descripcion = Column(String, nullable=True)
+    secuencia_desde = Column(Integer, nullable=False)
+    secuencia_hasta = Column(Integer, nullable=False)
+    secuencia_actual = Column(Integer, nullable=False)  # próximo número a emitir
+    fecha_vencimiento = Column(Date, nullable=False)
+    activa = Column(String, default="si")
+
+    comercio = relationship("Comercio", back_populates="secuencias_ncf")
+
+
+class Factura(Base):
+    __tablename__ = "facturas"
+    __table_args__ = (
+        UniqueConstraint("comercio_id", "nro_factura", name="uq_factura_comercio_nro"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    comercio_id = Column(Integer, ForeignKey("comercios.id"), nullable=False, index=True)
+    nro_factura = Column(String, index=True, nullable=False)  # el NCF real generado por el sistema, ej. B0200000001
+    tipo_ncf = Column(String, nullable=False)
     cliente = Column(String, nullable=False)
     rnc_cedula = Column(String, nullable=False)
     subtotal = Column(Float, nullable=False)
@@ -18,6 +67,7 @@ class Factura(Base):
     metodo_pago = Column(String, nullable=False)
     fecha_emision = Column(DateTime, default=datetime.utcnow)
 
+    comercio = relationship("Comercio", back_populates="facturas")
     items = relationship(
         "DetalleFactura", back_populates="factura", cascade="all, delete-orphan"
     )
@@ -39,6 +89,7 @@ class Empeno(Base):
     __tablename__ = "empenos"
 
     id = Column(Integer, primary_key=True, index=True)
+    comercio_id = Column(Integer, ForeignKey("comercios.id"), nullable=False, index=True)
     cliente_nombre = Column(String, nullable=False)
     cedula_cliente = Column(String, nullable=False)
     bien_prendario = Column(String, nullable=False)
@@ -51,11 +102,14 @@ class Empeno(Base):
     fecha_vencimiento_inamovible = Column(Date, nullable=False)
     estado = Column(String, default="Activo")
 
+    comercio = relationship("Comercio", back_populates="empenos")
+
 
 class Dominio(Base):
     __tablename__ = "dominios"
 
     id = Column(Integer, primary_key=True, index=True)
+    comercio_id = Column(Integer, ForeignKey("comercios.id"), nullable=False, index=True)
     dominio = Column(String, nullable=False)
     extension = Column(String, nullable=False)
     nombre_completo = Column(String, nullable=False)
@@ -63,3 +117,5 @@ class Dominio(Base):
     contacto_correo = Column(String, nullable=False)
     precio_anual = Column(Float, nullable=False)
     fecha_registro = Column(DateTime, default=datetime.utcnow)
+
+    comercio = relationship("Comercio", back_populates="dominios")
