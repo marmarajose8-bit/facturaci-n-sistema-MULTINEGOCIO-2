@@ -1,7 +1,13 @@
 from fastapi import FastAPI
+
+from core.database import Base, engine
+from core import models  # noqa: F401 - registra los modelos en Base antes de crear las tablas
 from modules.prestamos.router import router as prestamos_router
 from modules.dominios.router import router as dominios_router
 from modules.pos.router import router as pos_router
+
+# Crea las tablas en la base de datos si todavía no existen
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Ecosistema SaaS Multinegocio RYM",
