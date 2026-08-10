@@ -5,29 +5,24 @@ from pydantic import BaseModel
 from config.settings import MONEDA
 from core.database import get_db
 from core.models import Dominio, Comercio
+from core.deps import get_comercio_actual
 
 router = APIRouter(prefix="/dominios", tags=["Reventa de Dominios y Web - RD"])
 
 
 class SolicitudDominio(BaseModel):
-    comercio_id: int
     dominio: str
     extension: str  # Ej: ".com", ".do", ".com.do"
     cliente: str
     contacto_correo: str
 
 
-def _validar_comercio(comercio_id: int, db: Session) -> Comercio:
-    comercio = db.query(Comercio).filter(Comercio.id == comercio_id).first()
-    if not comercio:
-        raise HTTPException(status_code=404, detail=f"Comercio {comercio_id} no encontrado")
-    return comercio
-
-
 @router.post("/consultar-y-registrar")
-def consultar_y_registrar(datos: SolicitudDominio, db: Session = Depends(get_db)):
-    comercio = _validar_comercio(datos.comercio_id, db)
-
+def consultar_y_registrar(
+    datos: SolicitudDominio,
+    db: Session = Depends(get_db),
+    comercio_actual: Comercio = Depends(get_comercio_actual),
+):
     nombre_completo = f"{datos.dominio}{datos.extension}"
 
     # Simulación de cotización adaptada al mercado local (RD)
@@ -35,7 +30,7 @@ def consultar_y_registrar(datos: SolicitudDominio, db: Session = Depends(get_db)
     precio_base_dop = 1200.0 if datos.extension == ".do" else 950.0
 
     registro = Dominio(
-        comercio_id=datos.comercio_id,
+        comercio_id=comercio_actual.id,
         dominio=datos.dominio,
         extension=datos.extension,
         nombre_completo=nombre_completo,
@@ -49,10 +44,9 @@ def consultar_y_registrar(datos: SolicitudDominio, db: Session = Depends(get_db)
     db.refresh(registro)
 
     return {
-        "entidad": comercio.nombre_comercial,
+        "entidad": comercio_actual.nombre_comercial,
         "modulo": "Reventa de Dominios",
         "estado": "Dominio Registrado con Exito",
-        "comercio_id": registro.comercio_id,
         "dominio": registro.nombre_completo,
         "cliente": registro.cliente,
         "correo": registro.contacto_correo,
@@ -63,11 +57,13 @@ def consultar_y_registrar(datos: SolicitudDominio, db: Session = Depends(get_db)
 
 
 @router.get("/dominios")
-def listar_dominios(comercio_id: int, db: Session = Depends(get_db)):
-    _validar_comercio(comercio_id, db)
+def listar_dominios(
+    db: Session = Depends(get_db),
+    comercio_actual: Comercio = Depends(get_comercio_actual),
+):
     dominios = (
         db.query(Dominio)
-        .filter(Dominio.comercio_id == comercio_id)
+        .filter(Dominio.comercio_id == comercio_actual.id)
         .order_by(Dominio.id.desc())
         .all()
     )

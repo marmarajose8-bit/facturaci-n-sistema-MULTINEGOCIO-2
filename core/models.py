@@ -15,6 +15,7 @@ class Comercio(Base):
     nombre_comercial = Column(String, nullable=False)
     rnc = Column(String, unique=True, index=True, nullable=False)
     email_contacto = Column(String, nullable=False)
+    password_hash = Column(String, nullable=False)
     plan = Column(String, default="basico")
     activo = Column(String, default="si")  # "si" / "no" - simple por ahora, sin lógica de suspensión aún
     fecha_creacion = Column(DateTime, default=datetime.utcnow)

@@ -5,6 +5,8 @@ from datetime import date
 
 from core.database import get_db
 from core.models import Comercio, SecuenciaNCF
+from core.security import hash_password
+from core.deps import get_comercio_actual
 
 router = APIRouter(prefix="/comercios", tags=["Comercios (Tenants)"])
 
@@ -13,14 +15,8 @@ class RegistroComercio(BaseModel):
     nombre_comercial: str
     rnc: str
     email_contacto: EmailStr
+    password: str
     plan: str = "basico"
-
-
-def _validar_comercio(comercio_id: int, db: Session) -> Comercio:
-    comercio = db.query(Comercio).filter(Comercio.id == comercio_id).first()
-    if not comercio:
-        raise HTTPException(status_code=404, detail=f"Comercio {comercio_id} no encontrado")
-    return comercio
 
 
 @router.post("/registrar")
@@ -31,11 +27,14 @@ def registrar_comercio(datos: RegistroComercio, db: Session = Depends(get_db)):
             status_code=400,
             detail=f"Ya existe un comercio registrado con el RNC {datos.rnc}",
         )
+    if len(datos.password) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
 
     comercio = Comercio(
         nombre_comercial=datos.nombre_comercial,
         rnc=datos.rnc,
         email_contacto=datos.email_contacto,
+        password_hash=hash_password(datos.password),
         plan=datos.plan,
     )
     db.add(comercio)
@@ -48,39 +47,26 @@ def registrar_comercio(datos: RegistroComercio, db: Session = Depends(get_db)):
         "nombre_comercial": comercio.nombre_comercial,
         "rnc": comercio.rnc,
         "plan": comercio.plan,
+        "aviso": "Inicia sesión en POST /auth/login con tu RNC y contraseña para obtener tu token de acceso.",
     }
 
 
-@router.get("")
-def listar_comercios(db: Session = Depends(get_db)):
-    comercios = db.query(Comercio).order_by(Comercio.id.desc()).all()
-    return [
-        {
-            "id": c.id,
-            "nombre_comercial": c.nombre_comercial,
-            "rnc": c.rnc,
-            "plan": c.plan,
-            "activo": c.activo,
-        }
-        for c in comercios
-    ]
+# ---------- Endpoints propios (requieren sesión) ----------
 
-
-@router.get("/{comercio_id}")
-def obtener_comercio(comercio_id: int, db: Session = Depends(get_db)):
-    comercio = _validar_comercio(comercio_id, db)
+@router.get("/yo")
+def mi_comercio(comercio_actual: Comercio = Depends(get_comercio_actual)):
     return {
-        "id": comercio.id,
-        "nombre_comercial": comercio.nombre_comercial,
-        "rnc": comercio.rnc,
-        "email_contacto": comercio.email_contacto,
-        "plan": comercio.plan,
-        "activo": comercio.activo,
-        "fecha_creacion": comercio.fecha_creacion,
+        "id": comercio_actual.id,
+        "nombre_comercial": comercio_actual.nombre_comercial,
+        "rnc": comercio_actual.rnc,
+        "email_contacto": comercio_actual.email_contacto,
+        "plan": comercio_actual.plan,
+        "activo": comercio_actual.activo,
+        "fecha_creacion": comercio_actual.fecha_creacion,
     }
 
 
-# ---------- Secuencias NCF (DGII) ----------
+# ---------- Secuencias NCF (DGII) - requieren sesión del propio comercio ----------
 
 class RegistroSecuenciaNCF(BaseModel):
     tipo_ncf: str  # Ej: "B02" (Consumo), "B01" (Crédito Fiscal)
@@ -90,32 +76,34 @@ class RegistroSecuenciaNCF(BaseModel):
     fecha_vencimiento: date
 
 
-@router.post("/{comercio_id}/secuencias-ncf")
-def registrar_secuencia_ncf(comercio_id: int, datos: RegistroSecuenciaNCF, db: Session = Depends(get_db)):
+@router.post("/secuencias-ncf")
+def registrar_secuencia_ncf(
+    datos: RegistroSecuenciaNCF,
+    db: Session = Depends(get_db),
+    comercio_actual: Comercio = Depends(get_comercio_actual),
+):
     """
-    Registra el rango de NCF que la DGII autorizó a este comercio para un tipo de
-    comprobante. Esto viene de la Autorización de Impresión / Secuencia que la DGII
-    le entrega al negocio - aquí solo se transcribe, no se inventa.
+    Registra el rango de NCF que la DGII autorizó a ESTE comercio (el dueño del
+    token) para un tipo de comprobante. Esto viene de la Autorización de Impresión
+    / Secuencia que la DGII le entrega al negocio - aquí solo se transcribe.
     """
-    _validar_comercio(comercio_id, db)
-
     if datos.secuencia_desde > datos.secuencia_hasta:
         raise HTTPException(status_code=400, detail="secuencia_desde no puede ser mayor que secuencia_hasta")
 
     existente = (
         db.query(SecuenciaNCF)
-        .filter(SecuenciaNCF.comercio_id == comercio_id, SecuenciaNCF.tipo_ncf == datos.tipo_ncf)
+        .filter(SecuenciaNCF.comercio_id == comercio_actual.id, SecuenciaNCF.tipo_ncf == datos.tipo_ncf)
         .first()
     )
     if existente:
         raise HTTPException(
             status_code=400,
-            detail=f"Este comercio ya tiene una secuencia registrada para el tipo {datos.tipo_ncf}. "
-                   f"Si la DGII le autorizó un rango nuevo, hay que dar de baja la anterior primero.",
+            detail=f"Ya tienes una secuencia registrada para el tipo {datos.tipo_ncf}. "
+                   f"Si la DGII te autorizó un rango nuevo, hay que dar de baja la anterior primero.",
         )
 
     secuencia = SecuenciaNCF(
-        comercio_id=comercio_id,
+        comercio_id=comercio_actual.id,
         tipo_ncf=datos.tipo_ncf,
         descripcion=datos.descripcion,
         secuencia_desde=datos.secuencia_desde,
@@ -130,17 +118,18 @@ def registrar_secuencia_ncf(comercio_id: int, datos: RegistroSecuenciaNCF, db: S
     return {
         "estado": "Secuencia NCF Registrada",
         "id": secuencia.id,
-        "comercio_id": comercio_id,
         "tipo_ncf": secuencia.tipo_ncf,
         "rango": f"{secuencia.tipo_ncf}{secuencia.secuencia_desde:08d} - {secuencia.tipo_ncf}{secuencia.secuencia_hasta:08d}",
         "fecha_vencimiento": secuencia.fecha_vencimiento,
     }
 
 
-@router.get("/{comercio_id}/secuencias-ncf")
-def listar_secuencias_ncf(comercio_id: int, db: Session = Depends(get_db)):
-    _validar_comercio(comercio_id, db)
-    secuencias = db.query(SecuenciaNCF).filter(SecuenciaNCF.comercio_id == comercio_id).all()
+@router.get("/secuencias-ncf")
+def listar_secuencias_ncf(
+    db: Session = Depends(get_db),
+    comercio_actual: Comercio = Depends(get_comercio_actual),
+):
+    secuencias = db.query(SecuenciaNCF).filter(SecuenciaNCF.comercio_id == comercio_actual.id).all()
     return [
         {
             "tipo_ncf": s.tipo_ncf,

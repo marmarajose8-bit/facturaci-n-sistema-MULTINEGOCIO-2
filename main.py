@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from core.database import Base, engine
 from core import models  # noqa: F401 - registra los modelos en Base antes de crear las tablas
+from modules.auth.router import router as auth_router
 from modules.comercios.router import router as comercios_router
 from modules.prestamos.router import router as prestamos_router
 from modules.dominios.router import router as dominios_router
@@ -17,6 +18,7 @@ app = FastAPI(
 )
 
 # Incluir los routers de los módulos del ecosistema
+app.include_router(auth_router)
 app.include_router(comercios_router)
 app.include_router(prestamos_router)
 app.include_router(dominios_router)
@@ -27,5 +29,5 @@ def read_root():
     return {
         "estado": "activo",
         "sistema": "JG Facturaciones",
-        "modulos": ["Comercios", "POS e Inventario", "Préstamos y Empeños", "Dominios y Web"]
+        "modulos": ["Autenticación", "Comercios", "POS e Inventario", "Préstamos y Empeños", "Dominios y Web"]
     }
