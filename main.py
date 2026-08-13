@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 
 from core.database import Base, engine
@@ -29,5 +30,7 @@ def read_root():
     return {
         "estado": "activo",
         "sistema": "JG Facturaciones",
-        "modulos": ["Autenticación", "Comercios", "POS e Inventario", "Préstamos y Empeños", "Dominios y Web"]
+        "modulos": ["Autenticación", "Comercios", "POS e Inventario", "Préstamos y Empeños", "Dominios y Web"],
+        "base_de_datos": engine.dialect.name,  # "postgresql" si está bien conectado, "sqlite" si NO
+        "database_url_detectada": bool(os.getenv("DATABASE_URL")),
     }
