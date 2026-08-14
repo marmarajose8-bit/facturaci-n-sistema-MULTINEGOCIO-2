@@ -24,6 +24,7 @@ class Comercio(Base):
     empenos = relationship("Empeno", back_populates="comercio")
     dominios = relationship("Dominio", back_populates="comercio")
     secuencias_ncf = relationship("SecuenciaNCF", back_populates="comercio")
+    empleados = relationship("Empleado", back_populates="comercio")
 
 
 class SecuenciaNCF(Base):
@@ -50,6 +51,26 @@ class SecuenciaNCF(Base):
     comercio = relationship("Comercio", back_populates="secuencias_ncf")
 
 
+class Empleado(Base):
+    """
+    Cajero o empleado de un comercio. No tiene login completo (usuario/contraseña) -
+    usa un PIN corto para identificarse al hacer una venta, como en una caja
+    registradora física. El dueño del comercio (con su sesión JWT) es quien da de
+    alta a los empleados.
+    """
+    __tablename__ = "empleados"
+
+    id = Column(Integer, primary_key=True, index=True)
+    comercio_id = Column(Integer, ForeignKey("comercios.id"), nullable=False, index=True)
+    nombre = Column(String, nullable=False)
+    pin_hash = Column(String, nullable=False)
+    rol = Column(String, default="cajero")  # "cajero" o "admin"
+    activo = Column(String, default="si")
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    comercio = relationship("Comercio", back_populates="empleados")
+
+
 class Factura(Base):
     __tablename__ = "facturas"
     __table_args__ = (
@@ -58,6 +79,7 @@ class Factura(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     comercio_id = Column(Integer, ForeignKey("comercios.id"), nullable=False, index=True)
+    empleado_id = Column(Integer, ForeignKey("empleados.id"), nullable=True)  # quién la emitió, si se identificó con PIN
     nro_factura = Column(String, index=True, nullable=False)  # el NCF real generado por el sistema, ej. B0200000001
     tipo_ncf = Column(String, nullable=False)
     cliente = Column(String, nullable=False)
@@ -69,6 +91,7 @@ class Factura(Base):
     fecha_emision = Column(DateTime, default=datetime.utcnow)
 
     comercio = relationship("Comercio", back_populates="facturas")
+    empleado = relationship("Empleado")
     items = relationship(
         "DetalleFactura", back_populates="factura", cascade="all, delete-orphan"
     )

@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
@@ -7,8 +8,9 @@ from typing import List
 
 from config.settings import MONEDA, ITBIS_GENERAL
 from core.database import get_db
-from core.models import Factura, DetalleFactura, Comercio, SecuenciaNCF
+from core.models import Factura, DetalleFactura, Comercio, SecuenciaNCF, Empleado
 from core.deps import get_comercio_actual
+from core.security import verify_password
 
 router = APIRouter(prefix="/pos", tags=["POS y Facturación - RD"])
 
@@ -25,6 +27,7 @@ class FacturaRD(BaseModel):
     rnc_cedula: str
     items: List[DetalleItem]
     metodo_pago: str  # Efectivo, Transferencia, Tarjeta
+    pin_empleado: Optional[str] = None  # opcional: identifica qué cajero hizo la venta
 
 
 def _siguiente_ncf(comercio_id: int, tipo_ncf: str, db: Session) -> str:
@@ -64,6 +67,20 @@ def _siguiente_ncf(comercio_id: int, tipo_ncf: str, db: Session) -> str:
     return ncf
 
 
+def _identificar_empleado(comercio_id: int, pin: Optional[str], db: Session) -> Optional[Empleado]:
+    if not pin:
+        return None
+    activos = (
+        db.query(Empleado)
+        .filter(Empleado.comercio_id == comercio_id, Empleado.activo == "si")
+        .all()
+    )
+    for e in activos:
+        if verify_password(pin, e.pin_hash):
+            return e
+    raise HTTPException(status_code=400, detail="PIN de empleado incorrecto o inactivo")
+
+
 @router.post("/emitir-factura-rd")
 def emitir_factura_rd(
     datos: FacturaRD,
@@ -71,6 +88,7 @@ def emitir_factura_rd(
     comercio_actual: Comercio = Depends(get_comercio_actual),
 ):
     ncf_generado = _siguiente_ncf(comercio_actual.id, datos.tipo_ncf, db)
+    empleado = _identificar_empleado(comercio_actual.id, datos.pin_empleado, db)
 
     subtotal = sum(item.cantidad * item.precio_unitario for item in datos.items)
     itbis = subtotal * ITBIS_GENERAL
@@ -78,6 +96,7 @@ def emitir_factura_rd(
 
     factura = Factura(
         comercio_id=comercio_actual.id,
+        empleado_id=empleado.id if empleado else None,
         nro_factura=ncf_generado,
         tipo_ncf=datos.tipo_ncf,
         cliente=datos.cliente,
@@ -112,6 +131,7 @@ def emitir_factura_rd(
         "total_pagar": factura.total_pagar,
         "moneda": MONEDA,
         "metodo_pago": factura.metodo_pago,
+        "atendido_por": empleado.nombre if empleado else None,
     }
 
 
@@ -134,6 +154,7 @@ def listar_facturas(
             "total_pagar": f.total_pagar,
             "metodo_pago": f.metodo_pago,
             "fecha_emision": f.fecha_emision,
+            "atendido_por": f.empleado.nombre if f.empleado else None,
         }
         for f in facturas
     ]
@@ -164,6 +185,7 @@ def obtener_factura(
         "total_pagar": factura.total_pagar,
         "moneda": MONEDA,
         "metodo_pago": factura.metodo_pago,
+        "atendido_por": factura.empleado.nombre if factura.empleado else None,
         "items": [
             {
                 "descripcion": item.descripcion,
