@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JG Facturaciones</title>
+<style>
+  :root {
+    --azul: #1e3a5f;
+    --azul-claro: #2c5282;
+    --verde: #2f855a;
+    --rojo: #c53030;
+    --gris-fondo: #f4f6f8;
+    --gris-borde: #d9dee3;
+    --texto: #1a202c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--gris-fondo);
+    color: var(--texto);
+  }
+  header {
+    background: var(--azul);
+    color: white;
+    padding: 14px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header h1 { font-size: 18px; margin: 0; }
+  header .info { font-size: 13px; opacity: 0.85; }
+  #btn-logout {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.4);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  #btn-logout:hover { background: rgba(255,255,255,0.1); }
+
+  .login-wrap {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    padding: 24px;
+    max-width: 420px;
+    width: 100%;
+  }
+  .card h2 { margin-top: 0; font-size: 20px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: #4a5568; }
+  input, select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--gris-borde);
+    border-radius: 6px;
+    font-size: 14px;
+  }
+  button.primario {
+    background: var(--azul);
+    color: white;
+    border: none;
+    padding: 11px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 16px;
+  }
+  button.primario:hover { background: var(--azul-claro); }
+  button.secundario {
+    background: white;
+    color: var(--azul);
+    border: 1px solid var(--azul);
+    padding: 9px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 8px;
+  }
+  .toggle-link { text-align: center; margin-top: 14px; font-size: 13px; }
+  .toggle-link a { color: var(--azul-claro); cursor: pointer; text-decoration: underline; }
+
+  .msg { padding: 10px 12px; border-radius: 6px; font-size: 13px; margin-top: 12px; display: none; }
+  .msg.error { background: #fed7d7; color: var(--rojo); display: block; }
+  .msg.ok { background: #c6f6d5; color: var(--verde); display: block; }
+
+  main { max-width: 1000px; margin: 20px auto; padding: 0 16px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--gris-borde); margin-bottom: 16px; flex-wrap: wrap; }
+  .tab {
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    font-size: 14px;
+    font-weight: 500;
+    color: #718096;
+  }
+  .tab.activo { color: var(--azul); border-bottom-color: var(--azul); }
+  .panel-seccion { display: none; }
+  .panel-seccion.activo { display: block; }
+
+  .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid-form .full { grid-column: 1 / -1; }
+
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; margin-top: 12px; }
+  th, td { text-align: left; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--gris-borde); }
+  th { background: #edf2f7; font-weight: 600; color: #4a5568; }
+  tr:last-child td { border-bottom: none; }
+
+  .caja { background: white; border-radius: 8px; padding: 18px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; }
+  .caja h3 { margin-top: 0; font-size: 15px; }
+
+  .item-linea { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 8px; margin-bottom: 6px; align-items: center; }
+  .btn-quitar { background: var(--rojo); color: white; border: none; border-radius: 4px; width: 26px; height: 26px; cursor: pointer; }
+  .btn-agregar-item { background: #edf2f7; border: 1px dashed var(--gris-borde); padding: 6px; border-radius: 6px; cursor: pointer; font-size: 12px; width: 100%; margin-top: 4px; }
+  .total-linea { text-align: right; font-weight: 600; margin-top: 10px; font-size: 14px; }
+  .vacio { color: #a0aec0; font-size: 13px; padding: 14px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="vista-login" class="login-wrap">
+  <div class="card">
+    <h2 id="titulo-auth">Iniciar sesión</h2>
+    <div>
+      <label>RNC del comercio</label>
+      <input id="login-rnc" placeholder="130111111">
+      <label>Contraseña</label>
+      <input id="login-password" type="password" placeholder="••••••••">
+      <button class="primario" onclick="hacerLogin()">Entrar</button>
+    </div>
+
+    <div id="form-registro" style="display:none; margin-top:16px; border-top:1px solid var(--gris-borde); padding-top:16px;">
+      <label>Nombre comercial</label>
+      <input id="reg-nombre" placeholder="Supermercado RYM">
+      <label>RNC</label>
+      <input id="reg-rnc" placeholder="130111111">
+      <label>Correo de contacto</label>
+      <input id="reg-email" placeholder="correo@ejemplo.com">
+      <label>Contraseña (mínimo 8 caracteres)</label>
+      <input id="reg-password" type="password">
+      <button class="primario" onclick="hacerRegistro()">Registrar mi comercio</button>
+    </div>
+
+    <div class="toggle-link">
+      <a id="toggle-auth" onclick="alternarFormulario()">¿No tienes cuenta? Registra tu comercio</a>
+    </div>
+    <div id="auth-msg" class="msg"></div>
+  </div>
+</div>
+
+<div id="vista-app" style="display:none;">
+  <header>
+    <h1>JG Facturaciones</h1>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <span class="info" id="nombre-comercio-header"></span>
+      <button id="btn-logout" onclick="cerrarSesion()">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="tabs">
+      <div class="tab activo" data-tab="facturas" onclick="cambiarTab('facturas')">Facturas</div>
+      <div class="tab" data-tab="ncf" onclick="cambiarTab('ncf')">Secuencias NCF</div>
+      <div class="tab" data-tab="empleados" onclick="cambiarTab('empleados')">Empleados</div>
+      <div class="tab" data-tab="empenos" onclick="cambiarTab('empenos')">Empeños</div>
+      <div class="tab" data-tab="dominios" onclick="cambiarTab('dominios')">Dominios</div>
+    </div>
+
+    <!-- FACTURAS -->
+    <div class="panel-seccion activo" id="tab-facturas">
+      <div class="caja">
+        <h3>Emitir factura</h3>
+        <div id="mensaje-factura" class="msg"></div>
+        <div class="grid-form">
+          <div>
+            <label>Tipo de NCF</label>
+            <select id="f-tipo-ncf"></select>
+          </div>
+          <div>
+            <label>Método de pago</label>
+            <select id="f-metodo-pago">
+              <option>Efectivo</option>
+              <option>Transferencia</option>
+              <option>Tarjeta</option>
+            </select>
+          </div>
+          <div>
+            <label>Cliente</label>
+            <input id="f-cliente" placeholder="Juan Pérez">
+          </div>
+          <div>
+            <label>RNC / Cédula del cliente</label>
+            <input id="f-rnc-cliente" placeholder="001-1234567-8">
+          </div>
+          <div class="full">
+            <label>PIN de empleado (opcional)</label>
+            <input id="f-pin-empleado" placeholder="Dejar en blanco si no aplica" maxlength="6">
+          </div>
+        </div>
+
+        <label style="margin-top:16px;">Artículos</label>
+        <div id="lista-items"></div>
+        <button class="btn-agregar-item" onclick="agregarLineaItem()">+ Agregar artículo</button>
+
+        <div class="total-linea" id="total-factura-preview">Total: DOP 0.00</div>
+        <button class="primario" onclick="emitirFactura()">Emitir factura</button>
+      </div>
+
+      <div class="caja">
+        <h3>Facturas emitidas</h3>
+        <div id="tabla-facturas"></div>
+      </div>
+    </div>
+
+    <!-- NCF -->
+    <div class="panel-seccion" id="tab-ncf">
+      <div class="caja">
+        <h3>Registrar secuencia NCF autorizada por la DGII</h3>
+        <div id="mensaje-ncf" class="msg"></div>
+        <div class="grid-form">
+          <div>
+            <label>Tipo de NCF (ej. B02, B01)</label>
+            <input id="ncf-tipo" placeholder="B02">
+          </div>
+          <div>
+            <label>Descripción</label>
+            <input id="ncf-desc" placeholder="Consumo">
+          </div>
+          <div>
+            <label>Secuencia desde</label>
+            <input id="ncf-desde" type="number" placeholder="1">
+          </div>
+          <div>
+            <label>Secuencia hasta</label>
+            <input id="ncf-hasta" type="number" placeholder="500">
+          </div>
+          <div class="full">
+            <label>Fecha de vencimiento</label>
+            <input id="ncf-vencimiento" type="date">
+          </div>
+        </div>
+        <button class="primario" onclick="registrarSecuenciaNCF()">Registrar secuencia</button>
+      </div>
+
+      <div class="caja">
+        <h3>Secuencias activas</h3>
+        <div id="tabla-ncf"></div>
+      </div>
+    </div>
+
+    <!-- EMPLEADOS -->
+    <div class="panel-seccion" id="tab-empleados">
+      <div class="caja">
+        <h3>Registrar empleado</h3>
+        <div id="mensaje-empleado" class="msg"></div>
+        <div class="grid-form">
+          <div>
+            <label>Nombre</label>
+            <input id="emp-nombre" placeholder="María Pérez">
+          </div>
+          <div>
+            <label>PIN (4-6 dígitos)</label>
+            <input id="emp-pin" maxlength="6" placeholder="1234">
+          </div>
+          <div>
+            <label>Rol</label>
+            <select id="emp-rol">
+              <option value="cajero">Cajero</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+        </div>
+        <button class="primario" onclick="registrarEmpleado()">Registrar empleado</button>
+      </div>
+
+      <div class="caja">
+        <h3>Empleados</h3>
+        <div id="tabla-empleados"></div>
+      </div>
+    </div>
+
+    <!-- EMPEÑOS -->
+    <div class="panel-seccion" id="tab-empenos">
+      <div class="caja">
+        <h3>Registrar empeño</h3>
+        <div id="mensaje-empeno" class="msg"></div>
+        <div class="grid-form">
+          <div>
+            <label>Nombre del cliente</label>
+            <input id="emp2-nombre">
+          </div>
+          <div>
+            <label>Cédula del cliente</label>
+            <input id="emp2-cedula">
+          </div>
+          <div class="full">
+            <label>Bien en garantía</label>
+            <input id="emp2-bien" placeholder="Pasola Honda Lead 125">
+          </div>
+          <div>
+            <label>Valor de tasación (DOP)</label>
+            <input id="emp2-tasacion" type="number">
+          </div>
+          <div>
+            <label>Monto prestado (DOP)</label>
+            <input id="emp2-monto" type="number">
+          </div>
+          <div>
+            <label>Tasa de interés mensual (%)</label>
+            <input id="emp2-tasa" type="number" step="0.1" value="2">
+          </div>
+          <div></div>
+          <div>
+            <label>Fecha de inicio</label>
+            <input id="emp2-fecha-inicio" type="date">
+          </div>
+          <div>
+            <label>Fecha de vencimiento</label>
+            <input id="emp2-fecha-vencimiento" type="date">
+          </div>
+        </div>
+        <button class="primario" onclick="registrarEmpeno()">Registrar empeño</button>
+      </div>
+
+      <div class="caja">
+        <h3>Empeños activos</h3>
+        <div id="tabla-empenos"></div>
+      </div>
+    </div>
+
+    <!-- DOMINIOS -->
+    <div class="panel-seccion" id="tab-dominios">
+      <div class="caja">
+        <h3>Registrar dominio</h3>
+        <div id="mensaje-dominio" class="msg"></div>
+        <div class="grid-form">
+          <div>
+            <label>Dominio (sin extensión)</label>
+            <input id="dom-nombre" placeholder="elfarolrd">
+          </div>
+          <div>
+            <label>Extensión</label>
+            <select id="dom-extension">
+              <option>.com</option>
+              <option>.do</option>
+              <option>.com.do</option>
+            </select>
+          </div>
+          <div>
+            <label>Cliente</label>
+            <input id="dom-cliente">
+          </div>
+          <div>
+            <label>Correo de contacto</label>
+            <input id="dom-correo">
+          </div>
+        </div>
+        <button class="primario" onclick="registrarDominio()">Registrar dominio</button>
+      </div>
+
+      <div class="caja">
+        <h3>Dominios registrados</h3>
+        <div id="tabla-dominios"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const API = ""; // mismo origen: el panel vive en el mismo backend
+
+let token = localStorage.getItem("jg_token") || null;
+let nombreComercio = localStorage.getItem("jg_nombre_comercio") || null;
+let itemsFactura = [];
+
+function mostrarMsg(id, texto, tipo) {
+  const el = document.getElementById(id);
+  el.textContent = texto;
+  el.className = "msg " + tipo;
+}
+
+function ocultarMsg(id) {
+  const el = document.getElementById(id);
+  el.className = "msg";
+}
+
+async function apiFetch(ruta, opciones = {}) {
+  opciones.headers = opciones.headers || {};
+  if (token) opciones.headers["Authorization"] = "Bearer " + token;
+  if (opciones.body && !(opciones.headers["Content-Type"])) {
+    opciones.headers["Content-Type"] = "application/json";
+  }
+  const resp = await fetch(API + ruta, opciones);
+  let data = null;
+  try { data = await resp.json(); } catch (e) { data = null; }
+  if (!resp.ok) {
+    const detalle = data && data.detail ? (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail)) : "Error desconocido";
+    throw new Error(detalle);
+  }
+  return data;
+}
+
+// ---------- AUTENTICACIÓN ----------
+
+function alternarFormulario() {
+  const reg = document.getElementById("form-registro");
+  const link = document.getElementById("toggle-auth");
+  const titulo = document.getElementById("titulo-auth");
+  const mostrando = reg.style.display === "none";
+  reg.style.display = mostrando ? "block" : "none";
+  link.textContent = mostrando ? "¿Ya tienes cuenta? Inicia sesión" : "¿No tienes cuenta? Registra tu comercio";
+  titulo.textContent = mostrando ? "Registrar comercio" : "Iniciar sesión";
+  ocultarMsg("auth-msg");
+}
+
+async function hacerLogin() {
+  ocultarMsg("auth-msg");
+  const rnc = document.getElementById("login-rnc").value.trim();
+  const password = document.getElementById("login-password").value;
+  if (!rnc || !password) { mostrarMsg("auth-msg", "Completa RNC y contraseña", "error"); return; }
+
+  try {
+    const params = new URLSearchParams();
+    params.append("username", rnc);
+    params.append("password", password);
+    const resp = await fetch(API + "/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      mostrarMsg("auth-msg", data.detail || "RNC o contraseña incorrectos", "error");
+      return;
+    }
+    token = data.access_token;
+    nombreComercio = data.nombre_comercial;
+    localStorage.setItem("jg_token", token);
+    localStorage.setItem("jg_nombre_comercio", nombreComercio);
+    entrarAlPanel();
+  } catch (e) {
+    mostrarMsg("auth-msg", "No se pudo conectar con el servidor", "error");
+  }
+}
+
+async function hacerRegistro() {
+  ocultarMsg("auth-msg");
+  const body = {
+    nombre_comercial: document.getElementById("reg-nombre").value.trim(),
+    rnc: document.getElementById("reg-rnc").value.trim(),
+    email_contacto: document.getElementById("reg-email").value.trim(),
+    password: document.getElementById("reg-password").value,
+    plan: "basico"
+  };
+  if (!body.nombre_comercial || !body.rnc || !body.email_contacto || !body.password) {
+    mostrarMsg("auth-msg", "Completa todos los campos", "error");
+    return;
+  }
+  try {
+    await apiFetch("/comercios/registrar", { method: "POST", body: JSON.stringify(body) });
+    mostrarMsg("auth-msg", "Comercio registrado. Ahora inicia sesión con tu RNC y contraseña.", "ok");
+    alternarFormulario();
+    document.getElementById("login-rnc").value = body.rnc;
+  } catch (e) {
+    mostrarMsg("auth-msg", e.message, "error");
+  }
+}
+
+function cerrarSesion() {
+  token = null;
+  nombreComercio = null;
+  localStorage.removeItem("jg_token");
+  localStorage.removeItem("jg_nombre_comercio");
+  document.getElementById("vista-app").style.display = "none";
+  document.getElementById("vista-login").style.display = "flex";
+}
+
+function entrarAlPanel() {
+  document.getElementById("vista-login").style.display = "none";
+  document.getElementById("vista-app").style.display = "block";
+  document.getElementById("nombre-comercio-header").textContent = nombreComercio || "";
+  itemsFactura = [];
+  agregarLineaItem();
+  cargarSecuenciasNCF();
+  cargarFacturas();
+  cargarEmpleados();
+  cargarEmpenos();
+  cargarDominios();
+}
+
+// ---------- TABS ----------
+
+function cambiarTab(nombre) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.remove("activo"));
+  document.querySelectorAll(".panel-seccion").forEach(p => p.classList.remove("activo"));
+  document.querySelector(`.tab[data-tab="${nombre}"]`).classList.add("activo");
+  document.getElementById("tab-" + nombre).classList.add("activo");
+}
+
+// ---------- FACTURAS ----------
+
+function agregarLineaItem() {
+  const idx = itemsFactura.length;
+  itemsFactura.push({ descripcion: "", cantidad: 1, precio_unitario: 0 });
+  renderItems();
+}
+
+function quitarLineaItem(idx) {
+  itemsFactura.splice(idx, 1);
+  renderItems();
+}
+
+function actualizarItem(idx, campo, valor) {
+  itemsFactura[idx][campo] = campo === "descripcion" ? valor : parseFloat(valor) || 0;
+  actualizarTotalPreview();
+}
+
+function renderItems() {
+  const cont = document.getElementById("lista-items");
+  cont.innerHTML = "";
+  itemsFactura.forEach((item, idx) => {
+    const fila = document.createElement("div");
+    fila.className = "item-linea";
+    fila.innerHTML = `
+      <input placeholder="Descripción" value="${item.descripcion}" oninput="actualizarItem(${idx},'descripcion',this.value)">
+      <input type="number" placeholder="Cant." value="${item.cantidad}" oninput="actualizarItem(${idx},'cantidad',this.value)">
+      <input type="number" placeholder="Precio" value="${item.precio_unitario}" oninput="actualizarItem(${idx},'precio_unitario',this.value)">
+      <button class="btn-quitar" onclick="quitarLineaItem(${idx})">×</button>
+    `;
+    cont.appendChild(fila);
+  });
+  actualizarTotalPreview();
+}
+
+function actualizarTotalPreview() {
+  const subtotal = itemsFactura.reduce((s, i) => s + (i.cantidad * i.precio_unitario), 0);
+  const total = subtotal * 1.18;
+  document.getElementById("total-factura-preview").textContent = "Total (con 18% ITBIS): DOP " + total.toFixed(2);
+}
+
+async function cargarSecuenciasNCF() {
+  try {
+    const secuencias = await apiFetch("/comercios/secuencias-ncf");
+    const select = document.getElementById("f-tipo-ncf");
+    select.innerHTML = "";
+    if (secuencias.length === 0) {
+      select.innerHTML = '<option value="">Registra una secuencia NCF primero</option>';
+    } else {
+      secuencias.forEach(s => {
+        const op = document.createElement("option");
+        op.value = s.tipo_ncf;
+        op.textContent = `${s.tipo_ncf} - ${s.descripcion || ""} (${s.disponibles} disponibles)`;
+        select.appendChild(op);
+      });
+    }
+    renderTablaNCF(secuencias);
+  } catch (e) { /* silencioso, se ve reflejado en la tabla vacía */ }
+}
+
+function renderTablaNCF(secuencias) {
+  const cont = document.getElementById("tabla-ncf");
+  if (!secuencias.length) { cont.innerHTML = '<div class="vacio">No hay secuencias registradas todavía.</div>'; return; }
+  let html = "<table><tr><th>Tipo</th><th>Descripción</th><th>Próximo NCF</th><th>Disponibles</th><th>Vence</th><th>Activa</th></tr>";
+  secuencias.forEach(s => {
+    html += `<tr><td>${s.tipo_ncf}</td><td>${s.descripcion || "-"}</td><td>${s.proximo_ncf}</td><td>${s.disponibles}</td><td>${s.fecha_vencimiento}</td><td>${s.activa}</td></tr>`;
+  });
+  html += "</table>";
+  cont.innerHTML = html;
+}
+
+async function registrarSecuenciaNCF() {
+  ocultarMsg("mensaje-ncf");
+  const body = {
+    tipo_ncf: document.getElementById("ncf-tipo").value.trim().toUpperCase(),
+    descripcion: document.getElementById("ncf-desc").value.trim(),
+    secuencia_desde: parseInt(document.getElementById("ncf-desde").value),
+    secuencia_hasta: parseInt(document.getElementById("ncf-hasta").value),
+    fecha_vencimiento: document.getElementById("ncf-vencimiento").value
+  };
+  if (!body.tipo_ncf || !body.secuencia_desde || !body.secuencia_hasta || !body.fecha_vencimiento) {
+    mostrarMsg("mensaje-ncf", "Completa todos los campos requeridos", "error");
+    return;
+  }
+  try {
+    await apiFetch("/comercios/secuencias-ncf", { method: "POST", body: JSON.stringify(body) });
+    mostrarMsg("mensaje-ncf", "Secuencia registrada correctamente", "ok");
+    document.getElementById("ncf-tipo").value = "";
+    document.getElementById("ncf-desc").value = "";
+    document.getElementById("ncf-desde").value = "";
+    document.getElementById("ncf-hasta").value = "";
+    document.getElementById("ncf-vencimiento").value = "";
+    cargarSecuenciasNCF();
+  } catch (e) {
+    mostrarMsg("mensaje-ncf", e.message, "error");
+  }
+}
+
+async function emitirFactura() {
+  ocultarMsg("mensaje-factura");
+  const tipoNcf = document.getElementById("f-tipo-ncf").value;
+  const cliente = document.getElementById("f-cliente").value.trim();
+  const rncCliente = document.getElementById("f-rnc-cliente").value.trim();
+  const metodoPago = document.getElementById("f-metodo-pago").value;
+  const pin = document.getElementById("f-pin-empleado").value.trim();
+
+  const itemsValidos = itemsFactura.filter(i => i.descripcion && i.cantidad > 0 && i.precio_unitario > 0);
+
+  if (!tipoNcf) { mostrarMsg("mensaje-factura", "No tienes ninguna secuencia NCF registrada", "error"); return; }
+  if (!cliente || !rncCliente) { mostrarMsg("mensaje-factura", "Completa cliente y RNC/cédula", "error"); return; }
+  if (itemsValidos.length === 0) { mostrarMsg("mensaje-factura", "Agrega al menos un artículo válido", "error"); return; }
+
+  const body = {
+    tipo_ncf: tipoNcf,
+    cliente: cliente,
+    rnc_cedula: rncCliente,
+    items: itemsValidos,
+    metodo_pago: metodoPago
+  };
+  if (pin) body.pin_empleado = pin;
+
+  try {
+    const resp = await apiFetch("/pos/emitir-factura-rd", { method: "POST", body: JSON.stringify(body) });
+    mostrarMsg("mensaje-factura", `Factura ${resp.ncf} emitida - Total DOP ${resp.total_pagar.toFixed(2)}`, "ok");
+    itemsFactura = [];
+    agregarLineaItem();
+    document.getElementById("f-cliente").value = "";
+    document.getElementById("f-rnc-cliente").value = "";
+    document.getElementById("f-pin-empleado").value = "";
+    cargarFacturas();
+    cargarSecuenciasNCF();
+  } catch (e) {
+    mostrarMsg("mensaje-factura", e.message, "error");
+  }
+}
+
+async function cargarFacturas() {
+  try {
+    const facturas = await apiFetch("/pos/facturas");
+    const cont = document.getElementById("tabla-facturas");
+    if (!facturas.length) { cont.innerHTML = '<div class="vacio">Todavía no has emitido facturas.</div>'; return; }
+    let html = "<table><tr><th>NCF</th><th>Cliente</th><th>Total</th><th>Pago</th><th>Atendió</th><th>Fecha</th></tr>";
+    facturas.forEach(f => {
+      const fecha = new Date(f.fecha_emision).toLocaleString("es-DO");
+      html += `<tr><td>${f.ncf}</td><td>${f.cliente}</td><td>DOP ${f.total_pagar.toFixed(2)}</td><td>${f.metodo_pago}</td><td>${f.atendido_por || "-"}</td><td>${fecha}</td></tr>`;
+    });
+    html += "</table>";
+    cont.innerHTML = html;
+  } catch (e) { /* silencioso */ }
+}
+
+// ---------- EMPLEADOS ----------
+
+async function registrarEmpleado() {
+  ocultarMsg("mensaje-empleado");
+  const body = {
+    nombre: document.getElementById("emp-nombre").value.trim(),
+    pin: document.getElementById("emp-pin").value.trim(),
+    rol: document.getElementById("emp-rol").value
+  };
+  if (!body.nombre || !body.pin) { mostrarMsg("mensaje-empleado", "Completa nombre y PIN", "error"); return; }
+  try {
+    await apiFetch("/comercios/empleados", { method: "POST", body: JSON.stringify(body) });
+    mostrarMsg("mensaje-empleado", "Empleado registrado correctamente", "ok");
+    document.getElementById("emp-nombre").value = "";
+    document.getElementById("emp-pin").value = "";
+    cargarEmpleados();
+  } catch (e) {
+    mostrarMsg("mensaje-empleado", e.message, "error");
+  }
+}
+
+async function cargarEmpleados() {
+  try {
+    const empleados = await apiFetch("/comercios/empleados");
+    const cont = document.getElementById("tabla-empleados");
+    if (!empleados.length) { cont.innerHTML = '<div class="vacio">No hay empleados registrados.</div>'; return; }
+    let html = "<table><tr><th>Nombre</th><th>Rol</th><th>Estado</th></tr>";
+    empleados.forEach(e => {
+      html += `<tr><td>${e.nombre}</td><td>${e.rol}</td><td>${e.activo === "si" ? "Activo" : "Inactivo"}</td></tr>`;
+    });
+    html += "</table>";
+    cont.innerHTML = html;
+  } catch (e) { /* silencioso */ }
+}
+
+// ---------- EMPEÑOS ----------
+
+async function registrarEmpeno() {
+  ocultarMsg("mensaje-empeno");
+  const body = {
+    cliente_nombre: document.getElementById("emp2-nombre").value.trim(),
+    cedula_cliente: document.getElementById("emp2-cedula").value.trim(),
+    bien_prendario: document.getElementById("emp2-bien").value.trim(),
+    valor_tasacion: parseFloat(document.getElementById("emp2-tasacion").value),
+    monto_prestado: parseFloat(document.getElementById("emp2-monto").value),
+    tasa_interes_mensual: parseFloat(document.getElementById("emp2-tasa").value) || 2,
+    fecha_inicio: document.getElementById("emp2-fecha-inicio").value,
+    fecha_vencimiento_inamovible: document.getElementById("emp2-fecha-vencimiento").value
+  };
+  if (!body.cliente_nombre || !body.cedula_cliente || !body.bien_prendario || !body.valor_tasacion || !body.monto_prestado || !body.fecha_inicio || !body.fecha_vencimiento_inamovible) {
+    mostrarMsg("mensaje-empeno", "Completa todos los campos", "error");
+    return;
+  }
+  try {
+    await apiFetch("/prestamos/registrar-empeno-rym", { method: "POST", body: JSON.stringify(body) });
+    mostrarMsg("mensaje-empeno", "Empeño registrado correctamente", "ok");
+    ["emp2-nombre","emp2-cedula","emp2-bien","emp2-tasacion","emp2-monto"].forEach(id => document.getElementById(id).value = "");
+    cargarEmpenos();
+  } catch (e) {
+    mostrarMsg("mensaje-empeno", e.message, "error");
+  }
+}
+
+async function cargarEmpenos() {
+  try {
+    const empenos = await apiFetch("/prestamos/empenos");
+    const cont = document.getElementById("tabla-empenos");
+    if (!empenos.length) { cont.innerHTML = '<div class="vacio">No hay empeños registrados.</div>'; return; }
+    let html = "<table><tr><th>Cliente</th><th>Garantía</th><th>Total a pagar</th><th>Vence</th><th>Estado</th></tr>";
+    empenos.forEach(e => {
+      html += `<tr><td>${e.cliente}</td><td>${e.garantia}</td><td>DOP ${e.total_a_pagar.toFixed(2)}</td><td>${e.vencimiento}</td><td>${e.estado}</td></tr>`;
+    });
+    html += "</table>";
+    cont.innerHTML = html;
+  } catch (e) { /* silencioso */ }
+}
+
+// ---------- DOMINIOS ----------
+
+async function registrarDominio() {
+  ocultarMsg("mensaje-dominio");
+  const body = {
+    dominio: document.getElementById("dom-nombre").value.trim(),
+    extension: document.getElementById("dom-extension").value,
+    cliente: document.getElementById("dom-cliente").value.trim(),
+    contacto_correo: document.getElementById("dom-correo").value.trim()
+  };
+  if (!body.dominio || !body.cliente || !body.contacto_correo) {
+    mostrarMsg("mensaje-dominio", "Completa todos los campos", "error");
+    return;
+  }
+  try {
+    await apiFetch("/dominios/consultar-y-registrar", { method: "POST", body: JSON.stringify(body) });
+    mostrarMsg("mensaje-dominio", "Dominio registrado correctamente", "ok");
+    document.getElementById("dom-nombre").value = "";
+    document.getElementById("dom-cliente").value = "";
+    document.getElementById("dom-correo").value = "";
+    cargarDominios();
+  } catch (e) {
+    mostrarMsg("mensaje-dominio", e.message, "error");
+  }
+}
+
+async function cargarDominios() {
+  try {
+    const dominios = await apiFetch("/dominios/dominios");
+    const cont = document.getElementById("tabla-dominios");
+    if (!dominios.length) { cont.innerHTML = '<div class="vacio">No hay dominios registrados.</div>'; return; }
+    let html = "<table><tr><th>Dominio</th><th>Cliente</th><th>Precio anual</th></tr>";
+    dominios.forEach(d => {
+      html += `<tr><td>${d.dominio}</td><td>${d.cliente}</td><td>DOP ${d.precio_anual.toFixed(2)}</td></tr>`;
+    });
+    html += "</table>";
+    cont.innerHTML = html;
+  } catch (e) { /* silencioso */ }
+}
+
+// ---------- INICIO ----------
+
+if (token) {
+  entrarAlPanel();
+}
+</script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from core.database import Base, engine
 from core import models  # noqa: F401 - registra los modelos en Base antes de crear las tablas
@@ -26,6 +27,9 @@ app.include_router(empleados_router)
 app.include_router(prestamos_router)
 app.include_router(dominios_router)
 app.include_router(pos_router)
+
+# Panel visual (frontend) para dueños y cajeros de comercios - vive en /panel
+app.mount("/panel", StaticFiles(directory="static", html=True), name="panel")
 
 @app.get("/")
 def read_root():
