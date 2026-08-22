@@ -7,6 +7,7 @@ from core import models  # noqa: F401 - registra los modelos en Base antes de cr
 from modules.auth.router import router as auth_router
 from modules.comercios.router import router as comercios_router
 from modules.empleados.router import router as empleados_router
+from modules.productos.router import router as productos_router
 from modules.prestamos.router import router as prestamos_router
 from modules.dominios.router import router as dominios_router
 from modules.pos.router import router as pos_router
@@ -24,6 +25,7 @@ app = FastAPI(
 app.include_router(auth_router)
 app.include_router(comercios_router)
 app.include_router(empleados_router)
+app.include_router(productos_router)
 app.include_router(prestamos_router)
 app.include_router(dominios_router)
 app.include_router(pos_router)

@@ -25,6 +25,7 @@ class Comercio(Base):
     dominios = relationship("Dominio", back_populates="comercio")
     secuencias_ncf = relationship("SecuenciaNCF", back_populates="comercio")
     empleados = relationship("Empleado", back_populates="comercio")
+    productos = relationship("Producto", back_populates="comercio")
 
 
 class SecuenciaNCF(Base):
@@ -71,6 +72,30 @@ class Empleado(Base):
     comercio = relationship("Comercio", back_populates="empleados")
 
 
+class Producto(Base):
+    """
+    Artículo del catálogo/inventario de un comercio. Cuando una factura vende un
+    producto (en vez de una línea de texto libre), el stock se descuenta
+    automáticamente y no se permite vender más de lo que hay disponible.
+    """
+    __tablename__ = "productos"
+    __table_args__ = (
+        UniqueConstraint("comercio_id", "codigo_barras", name="uq_producto_comercio_codigo"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    comercio_id = Column(Integer, ForeignKey("comercios.id"), nullable=False, index=True)
+    codigo_barras = Column(String, nullable=True)  # opcional, único por comercio si se usa
+    nombre = Column(String, nullable=False)
+    precio_unitario = Column(Float, nullable=False)
+    stock_actual = Column(Integer, nullable=False, default=0)
+    stock_minimo = Column(Integer, nullable=False, default=0)  # para avisar cuándo reponer
+    activo = Column(String, default="si")
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+
+    comercio = relationship("Comercio", back_populates="productos")
+
+
 class Factura(Base):
     __tablename__ = "facturas"
     __table_args__ = (
@@ -102,11 +127,13 @@ class DetalleFactura(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     factura_id = Column(Integer, ForeignKey("facturas.id"), nullable=False)
+    producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True)  # si se vendió del inventario
     descripcion = Column(String, nullable=False)
     cantidad = Column(Integer, nullable=False)
     precio_unitario = Column(Float, nullable=False)
 
     factura = relationship("Factura", back_populates="items")
+    producto = relationship("Producto")
 
 
 class Empeno(Base):

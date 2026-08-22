@@ -1,14 +1,13 @@
 from datetime import date
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List
 
 from config.settings import MONEDA, ITBIS_GENERAL
 from core.database import get_db
-from core.models import Factura, DetalleFactura, Comercio, SecuenciaNCF, Empleado
+from core.models import Factura, DetalleFactura, Comercio, SecuenciaNCF, Empleado, Producto
 from core.deps import get_comercio_actual
 from core.security import verify_password
 
@@ -16,9 +15,10 @@ router = APIRouter(prefix="/pos", tags=["POS y Facturación - RD"])
 
 
 class DetalleItem(BaseModel):
-    descripcion: str
+    producto_id: Optional[int] = None  # si se manda, se descuenta del inventario y se usa el precio/nombre del catálogo
+    descripcion: Optional[str] = None  # requerido solo si NO se manda producto_id (línea libre)
     cantidad: int
-    precio_unitario: float
+    precio_unitario: Optional[float] = None  # requerido solo si NO se manda producto_id
 
 
 class FacturaRD(BaseModel):
@@ -81,6 +81,54 @@ def _identificar_empleado(comercio_id: int, pin: Optional[str], db: Session) -> 
     raise HTTPException(status_code=400, detail="PIN de empleado incorrecto o inactivo")
 
 
+def _procesar_items(comercio_id: int, items: List[DetalleItem], db: Session):
+    """
+    Valida cada línea de la factura. Si trae producto_id: busca el producto,
+    confirma que hay stock suficiente, y prepara el descuento (no lo aplica
+    todavía, para no tocar la base de datos si alguna línea posterior falla).
+    Si no trae producto_id: es una línea libre (requiere descripcion y precio).
+    Devuelve la lista de DetalleFactura listos para guardar y la lista de
+    productos a descontar.
+    """
+    detalles = []
+    productos_a_descontar = []  # (producto, cantidad)
+
+    for item in items:
+        if item.producto_id:
+            producto = (
+                db.query(Producto)
+                .filter(Producto.id == item.producto_id, Producto.comercio_id == comercio_id, Producto.activo == "si")
+                .first()
+            )
+            if not producto:
+                raise HTTPException(status_code=404, detail=f"Producto {item.producto_id} no encontrado")
+            if producto.stock_actual < item.cantidad:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Stock insuficiente de '{producto.nombre}': quedan {producto.stock_actual}, se pidieron {item.cantidad}",
+                )
+            detalles.append(DetalleFactura(
+                producto_id=producto.id,
+                descripcion=producto.nombre,
+                cantidad=item.cantidad,
+                precio_unitario=producto.precio_unitario,
+            ))
+            productos_a_descontar.append((producto, item.cantidad))
+        else:
+            if not item.descripcion or item.precio_unitario is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cada línea sin producto_id necesita descripcion y precio_unitario",
+                )
+            detalles.append(DetalleFactura(
+                descripcion=item.descripcion,
+                cantidad=item.cantidad,
+                precio_unitario=item.precio_unitario,
+            ))
+
+    return detalles, productos_a_descontar
+
+
 @router.post("/emitir-factura-rd")
 def emitir_factura_rd(
     datos: FacturaRD,
@@ -89,8 +137,9 @@ def emitir_factura_rd(
 ):
     ncf_generado = _siguiente_ncf(comercio_actual.id, datos.tipo_ncf, db)
     empleado = _identificar_empleado(comercio_actual.id, datos.pin_empleado, db)
+    detalles, productos_a_descontar = _procesar_items(comercio_actual.id, datos.items, db)
 
-    subtotal = sum(item.cantidad * item.precio_unitario for item in datos.items)
+    subtotal = sum(d.cantidad * d.precio_unitario for d in detalles)
     itbis = subtotal * ITBIS_GENERAL
     total_con_itbis = subtotal + itbis
 
@@ -106,14 +155,12 @@ def emitir_factura_rd(
         total_pagar=round(total_con_itbis, 2),
         metodo_pago=datos.metodo_pago,
     )
-    factura.items = [
-        DetalleFactura(
-            descripcion=item.descripcion,
-            cantidad=item.cantidad,
-            precio_unitario=item.precio_unitario,
-        )
-        for item in datos.items
-    ]
+    factura.items = detalles
+
+    # Ahora que sabemos que toda la factura es válida, descontamos el stock
+    for producto, cantidad in productos_a_descontar:
+        producto.stock_actual -= cantidad
+        db.add(producto)
 
     db.add(factura)
     db.commit()
@@ -191,6 +238,7 @@ def obtener_factura(
                 "descripcion": item.descripcion,
                 "cantidad": item.cantidad,
                 "precio_unitario": item.precio_unitario,
+                "producto_id": item.producto_id,
             }
             for item in factura.items
         ],
