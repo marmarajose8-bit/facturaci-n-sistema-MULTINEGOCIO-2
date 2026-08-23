@@ -173,6 +173,7 @@
   <main>
     <div class="tabs">
       <div class="tab activo" data-tab="facturas" onclick="cambiarTab('facturas')">Facturas</div>
+      <div class="tab" data-tab="inventario" onclick="cambiarTab('inventario')">Inventario</div>
       <div class="tab" data-tab="ncf" onclick="cambiarTab('ncf')">Secuencias NCF</div>
       <div class="tab" data-tab="empleados" onclick="cambiarTab('empleados')">Empleados</div>
       <div class="tab" data-tab="empenos" onclick="cambiarTab('empenos')">Empeños</div>
@@ -222,6 +223,42 @@
       <div class="caja">
         <h3>Facturas emitidas</h3>
         <div id="tabla-facturas"></div>
+      </div>
+    </div>
+
+    <!-- INVENTARIO -->
+    <div class="panel-seccion" id="tab-inventario">
+      <div class="caja">
+        <h3>Registrar producto</h3>
+        <div id="mensaje-producto" class="msg"></div>
+        <div class="grid-form">
+          <div>
+            <label>Nombre del producto</label>
+            <input id="prod-nombre" placeholder="Arroz 5lb">
+          </div>
+          <div>
+            <label>Código de barras (opcional)</label>
+            <input id="prod-codigo" placeholder="7501234567890">
+          </div>
+          <div>
+            <label>Precio unitario (DOP)</label>
+            <input id="prod-precio" type="number" step="0.01">
+          </div>
+          <div>
+            <label>Stock inicial</label>
+            <input id="prod-stock" type="number" value="0">
+          </div>
+          <div class="full">
+            <label>Stock mínimo (avisa cuando llegue aquí)</label>
+            <input id="prod-stock-min" type="number" value="0">
+          </div>
+        </div>
+        <button class="primario" onclick="registrarProducto()">Registrar producto</button>
+      </div>
+
+      <div class="caja">
+        <h3>Catálogo</h3>
+        <div id="tabla-productos"></div>
       </div>
     </div>
 
@@ -385,6 +422,7 @@ const API = ""; // mismo origen: el panel vive en el mismo backend
 let token = localStorage.getItem("jg_token") || null;
 let nombreComercio = localStorage.getItem("jg_nombre_comercio") || null;
 let itemsFactura = [];
+let catalogoProductos = [];
 
 function mostrarMsg(id, texto, tipo) {
   const el = document.getElementById(id);
@@ -499,6 +537,7 @@ function entrarAlPanel() {
   cargarEmpleados();
   cargarEmpenos();
   cargarDominios();
+  cargarProductos();
 }
 
 // ---------- TABS ----------
@@ -514,7 +553,7 @@ function cambiarTab(nombre) {
 
 function agregarLineaItem() {
   const idx = itemsFactura.length;
-  itemsFactura.push({ descripcion: "", cantidad: 1, precio_unitario: 0 });
+  itemsFactura.push({ modo: "libre", producto_id: null, descripcion: "", cantidad: 1, precio_unitario: 0 });
   renderItems();
 }
 
@@ -524,8 +563,25 @@ function quitarLineaItem(idx) {
 }
 
 function actualizarItem(idx, campo, valor) {
-  itemsFactura[idx][campo] = campo === "descripcion" ? valor : parseFloat(valor) || 0;
+  if (campo === "descripcion") itemsFactura[idx][campo] = valor;
+  else if (campo === "producto_id") {
+    const prod = catalogoProductos.find(p => p.id === parseInt(valor));
+    itemsFactura[idx].producto_id = parseInt(valor) || null;
+    if (prod) {
+      itemsFactura[idx].descripcion = prod.nombre;
+      itemsFactura[idx].precio_unitario = prod.precio_unitario;
+    }
+  }
+  else itemsFactura[idx][campo] = parseFloat(valor) || 0;
   actualizarTotalPreview();
+}
+
+function cambiarModoLinea(idx, modo) {
+  itemsFactura[idx].modo = modo;
+  itemsFactura[idx].producto_id = null;
+  itemsFactura[idx].descripcion = "";
+  itemsFactura[idx].precio_unitario = 0;
+  renderItems();
 }
 
 function renderItems() {
@@ -534,12 +590,27 @@ function renderItems() {
   itemsFactura.forEach((item, idx) => {
     const fila = document.createElement("div");
     fila.className = "item-linea";
-    fila.innerHTML = `
-      <input placeholder="Descripción" value="${item.descripcion}" oninput="actualizarItem(${idx},'descripcion',this.value)">
-      <input type="number" placeholder="Cant." value="${item.cantidad}" oninput="actualizarItem(${idx},'cantidad',this.value)">
-      <input type="number" placeholder="Precio" value="${item.precio_unitario}" oninput="actualizarItem(${idx},'precio_unitario',this.value)">
-      <button class="btn-quitar" onclick="quitarLineaItem(${idx})">×</button>
-    `;
+    if (item.modo === "producto") {
+      let opciones = '<option value="">Elige un producto...</option>';
+      catalogoProductos.forEach(p => {
+        const sel = p.id === item.producto_id ? "selected" : "";
+        opciones += `<option value="${p.id}" ${sel}>${p.nombre} (stock: ${p.stock_actual})</option>`;
+      });
+      fila.innerHTML = `
+        <select onchange="actualizarItem(${idx},'producto_id',this.value)">${opciones}</select>
+        <input type="number" placeholder="Cant." value="${item.cantidad}" oninput="actualizarItem(${idx},'cantidad',this.value)">
+        <button class="btn-quitar" style="background:#718096;" title="Cambiar a línea libre" onclick="cambiarModoLinea(${idx},'libre')">↺</button>
+        <button class="btn-quitar" onclick="quitarLineaItem(${idx})">×</button>
+      `;
+    } else {
+      fila.innerHTML = `
+        <input placeholder="Descripción" value="${item.descripcion}" oninput="actualizarItem(${idx},'descripcion',this.value)">
+        <input type="number" placeholder="Cant." value="${item.cantidad}" oninput="actualizarItem(${idx},'cantidad',this.value)">
+        <input type="number" placeholder="Precio" value="${item.precio_unitario}" oninput="actualizarItem(${idx},'precio_unitario',this.value)">
+        <button class="btn-quitar" style="background:#718096;" title="Elegir del inventario" onclick="cambiarModoLinea(${idx},'producto')">📦</button>
+        <button class="btn-quitar" onclick="quitarLineaItem(${idx})">×</button>
+      `;
+    }
     cont.appendChild(fila);
   });
   actualizarTotalPreview();
@@ -616,7 +687,12 @@ async function emitirFactura() {
   const metodoPago = document.getElementById("f-metodo-pago").value;
   const pin = document.getElementById("f-pin-empleado").value.trim();
 
-  const itemsValidos = itemsFactura.filter(i => i.descripcion && i.cantidad > 0 && i.precio_unitario > 0);
+  const itemsValidos = itemsFactura
+    .filter(i => i.modo === "producto" ? (i.producto_id && i.cantidad > 0) : (i.descripcion && i.cantidad > 0 && i.precio_unitario > 0))
+    .map(i => i.modo === "producto"
+      ? { producto_id: i.producto_id, cantidad: i.cantidad }
+      : { descripcion: i.descripcion, cantidad: i.cantidad, precio_unitario: i.precio_unitario }
+    );
 
   if (!tipoNcf) { mostrarMsg("mensaje-factura", "No tienes ninguna secuencia NCF registrada", "error"); return; }
   if (!cliente || !rncCliente) { mostrarMsg("mensaje-factura", "Completa cliente y RNC/cédula", "error"); return; }
@@ -641,6 +717,7 @@ async function emitirFactura() {
     document.getElementById("f-pin-empleado").value = "";
     cargarFacturas();
     cargarSecuenciasNCF();
+    cargarProductos();
   } catch (e) {
     mostrarMsg("mensaje-factura", e.message, "error");
   }
@@ -658,6 +735,54 @@ async function cargarFacturas() {
     });
     html += "</table>";
     cont.innerHTML = html;
+  } catch (e) { /* silencioso */ }
+}
+
+// ---------- INVENTARIO ----------
+
+async function registrarProducto() {
+  ocultarMsg("mensaje-producto");
+  const body = {
+    nombre: document.getElementById("prod-nombre").value.trim(),
+    precio_unitario: parseFloat(document.getElementById("prod-precio").value),
+    stock_actual: parseInt(document.getElementById("prod-stock").value) || 0,
+    stock_minimo: parseInt(document.getElementById("prod-stock-min").value) || 0,
+  };
+  const codigo = document.getElementById("prod-codigo").value.trim();
+  if (codigo) body.codigo_barras = codigo;
+
+  if (!body.nombre || !body.precio_unitario) {
+    mostrarMsg("mensaje-producto", "Completa nombre y precio", "error");
+    return;
+  }
+  try {
+    await apiFetch("/productos", { method: "POST", body: JSON.stringify(body) });
+    mostrarMsg("mensaje-producto", "Producto registrado correctamente", "ok");
+    document.getElementById("prod-nombre").value = "";
+    document.getElementById("prod-codigo").value = "";
+    document.getElementById("prod-precio").value = "";
+    document.getElementById("prod-stock").value = "0";
+    document.getElementById("prod-stock-min").value = "0";
+    cargarProductos();
+  } catch (e) {
+    mostrarMsg("mensaje-producto", e.message, "error");
+  }
+}
+
+async function cargarProductos() {
+  try {
+    catalogoProductos = await apiFetch("/productos");
+    const cont = document.getElementById("tabla-productos");
+    if (!catalogoProductos.length) { cont.innerHTML = '<div class="vacio">No hay productos en el catálogo todavía.</div>'; return; }
+    let html = "<table><tr><th>Nombre</th><th>Código</th><th>Precio</th><th>Stock</th><th>Estado</th></tr>";
+    catalogoProductos.forEach(p => {
+      const alerta = p.bajo_stock ? '<span style="color:#c53030; font-weight:600;">Bajo stock</span>' : '<span style="color:#2f855a;">OK</span>';
+      html += `<tr><td>${p.nombre}</td><td>${p.codigo_barras || "-"}</td><td>DOP ${p.precio_unitario.toFixed(2)}</td><td>${p.stock_actual}</td><td>${alerta}</td></tr>`;
+    });
+    html += "</table>";
+    cont.innerHTML = html;
+    // si la pestaña de facturas ya tiene líneas en modo "producto", refrescamos sus opciones
+    renderItems();
   } catch (e) { /* silencioso */ }
 }
 
