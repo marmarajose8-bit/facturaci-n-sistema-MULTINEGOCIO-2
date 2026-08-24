@@ -173,6 +173,7 @@
   <main>
     <div class="tabs">
       <div class="tab activo" data-tab="facturas" onclick="cambiarTab('facturas')">Facturas</div>
+      <div class="tab" data-tab="offline" onclick="cambiarTab('offline')">Modo Offline</div>
       <div class="tab" data-tab="inventario" onclick="cambiarTab('inventario')">Inventario</div>
       <div class="tab" data-tab="ncf" onclick="cambiarTab('ncf')">Secuencias NCF</div>
       <div class="tab" data-tab="empleados" onclick="cambiarTab('empleados')">Empleados</div>
@@ -223,6 +224,50 @@
       <div class="caja">
         <h3>Facturas emitidas</h3>
         <div id="tabla-facturas"></div>
+      </div>
+    </div>
+
+    <!-- MODO OFFLINE -->
+    <div class="panel-seccion" id="tab-offline">
+      <div class="caja">
+        <h3>Registrar venta sin internet</h3>
+        <p style="font-size:13px;color:#718096;margin-top:-8px;">Úsalo cuando no haya conexión. Se guarda como recibo provisional y se convierte en factura con NCF real al sincronizar.</p>
+        <div id="mensaje-offline" class="msg"></div>
+        <div class="grid-form">
+          <div>
+            <label>Tipo de NCF</label>
+            <select id="off-tipo-ncf"></select>
+          </div>
+          <div>
+            <label>Método de pago</label>
+            <select id="off-metodo-pago">
+              <option>Efectivo</option>
+              <option>Transferencia</option>
+              <option>Tarjeta</option>
+            </select>
+          </div>
+          <div>
+            <label>Cliente</label>
+            <input id="off-cliente" placeholder="Juan Pérez">
+          </div>
+          <div>
+            <label>RNC / Cédula del cliente</label>
+            <input id="off-rnc-cliente" placeholder="001-1234567-8">
+          </div>
+        </div>
+
+        <label style="margin-top:16px;">Artículos</label>
+        <div id="lista-items-offline"></div>
+        <button class="btn-agregar-item" onclick="agregarLineaItemOffline()">+ Agregar artículo</button>
+
+        <div class="total-linea" id="total-offline-preview">Total: DOP 0.00</div>
+        <button class="primario" onclick="guardarVentaOffline()">Guardar venta local</button>
+      </div>
+
+      <div class="caja">
+        <h3>Ventas pendientes de sincronizar</h3>
+        <div id="tabla-offline-pendientes"></div>
+        <button class="primario" style="margin-top:12px;" onclick="sincronizarOffline()">Sincronizar ahora</button>
       </div>
     </div>
 
@@ -538,6 +583,11 @@ function entrarAlPanel() {
   cargarEmpenos();
   cargarDominios();
   cargarProductos();
+
+  itemsOffline = [];
+  agregarLineaItemOffline();
+  cargarSecuenciasNCFOffline();
+  cargarOfflinePendientes();
 }
 
 // ---------- TABS ----------
@@ -819,6 +869,137 @@ async function cargarEmpleados() {
     html += "</table>";
     cont.innerHTML = html;
   } catch (e) { /* silencioso */ }
+}
+
+// ---------- MODO OFFLINE ----------
+
+let itemsOffline = [];
+
+function agregarLineaItemOffline() {
+  itemsOffline.push({ descripcion: "", cantidad: 1, precio_unitario: 0 });
+  renderItemsOffline();
+}
+
+function quitarLineaItemOffline(idx) {
+  itemsOffline.splice(idx, 1);
+  renderItemsOffline();
+}
+
+function actualizarItemOffline(idx, campo, valor) {
+  if (campo === "descripcion") itemsOffline[idx][campo] = valor;
+  else itemsOffline[idx][campo] = parseFloat(valor) || 0;
+  actualizarTotalPreviewOffline();
+}
+
+function renderItemsOffline() {
+  const cont = document.getElementById("lista-items-offline");
+  cont.innerHTML = "";
+  itemsOffline.forEach((item, idx) => {
+    const fila = document.createElement("div");
+    fila.className = "item-linea";
+    fila.innerHTML = `
+      <input placeholder="Descripción" value="${item.descripcion}" oninput="actualizarItemOffline(${idx},'descripcion',this.value)">
+      <input type="number" placeholder="Cant." value="${item.cantidad}" oninput="actualizarItemOffline(${idx},'cantidad',this.value)">
+      <input type="number" placeholder="Precio" value="${item.precio_unitario}" oninput="actualizarItemOffline(${idx},'precio_unitario',this.value)">
+      <button class="btn-quitar" onclick="quitarLineaItemOffline(${idx})">×</button>
+    `;
+    cont.appendChild(fila);
+  });
+  actualizarTotalPreviewOffline();
+}
+
+function actualizarTotalPreviewOffline() {
+  const subtotal = itemsOffline.reduce((s, i) => s + (i.cantidad * i.precio_unitario), 0);
+  const total = subtotal * 1.18;
+  document.getElementById("total-offline-preview").textContent = "Total (con 18% ITBIS): DOP " + total.toFixed(2);
+}
+
+async function cargarSecuenciasNCFOffline() {
+  try {
+    const secuencias = await apiFetch("/comercios/secuencias-ncf");
+    const select = document.getElementById("off-tipo-ncf");
+    select.innerHTML = "";
+    if (secuencias.length === 0) {
+      select.innerHTML = '<option value="">Registra una secuencia NCF primero</option>';
+    } else {
+      secuencias.forEach(s => {
+        const op = document.createElement("option");
+        op.value = s.tipo_ncf;
+        op.textContent = `${s.tipo_ncf} - ${s.descripcion || ""}`;
+        select.appendChild(op);
+      });
+    }
+  } catch (e) { /* silencioso */ }
+}
+
+async function guardarVentaOffline() {
+  ocultarMsg("mensaje-offline");
+  const tipoNcf = document.getElementById("off-tipo-ncf").value;
+  const cliente = document.getElementById("off-cliente").value.trim();
+  const rncCliente = document.getElementById("off-rnc-cliente").value.trim();
+  const metodoPago = document.getElementById("off-metodo-pago").value;
+
+  const itemsValidos = itemsOffline
+    .filter(i => i.descripcion && i.cantidad > 0 && i.precio_unitario > 0)
+    .map(i => ({ descripcion: i.descripcion, cantidad: i.cantidad, precio_unitario: i.precio_unitario }));
+
+  if (!tipoNcf) { mostrarMsg("mensaje-offline", "No tienes ninguna secuencia NCF registrada", "error"); return; }
+  if (!cliente || !rncCliente) { mostrarMsg("mensaje-offline", "Completa cliente y RNC/cédula", "error"); return; }
+  if (itemsValidos.length === 0) { mostrarMsg("mensaje-offline", "Agrega al menos un artículo válido", "error"); return; }
+
+  const body = {
+    tipo_ncf: tipoNcf,
+    cliente: cliente,
+    rnc_cedula: rncCliente,
+    items: itemsValidos,
+    metodo_pago: metodoPago
+  };
+
+  try {
+    const resp = await apiFetch("/offline/venta-local", { method: "POST", body: JSON.stringify(body) });
+    mostrarMsg("mensaje-offline", `Venta guardada localmente - recibo provisional ${resp.recibo_provisional}`, "ok");
+    itemsOffline = [];
+    agregarLineaItemOffline();
+    document.getElementById("off-cliente").value = "";
+    document.getElementById("off-rnc-cliente").value = "";
+    cargarOfflinePendientes();
+  } catch (e) {
+    mostrarMsg("mensaje-offline", e.message, "error");
+  }
+}
+
+async function cargarOfflinePendientes() {
+  try {
+    const pendientes = await apiFetch("/offline/pendientes");
+    const cont = document.getElementById("tabla-offline-pendientes");
+    if (!pendientes.length) { cont.innerHTML = '<div class="vacio">No hay ventas offline pendientes de sincronizar.</div>'; return; }
+    let html = "<table><tr><th>Recibo provisional</th><th>Fecha</th><th>Último error</th></tr>";
+    pendientes.forEach(p => {
+      html += `<tr><td>${p.recibo_provisional}</td><td>${p.fecha_creacion}</td><td>${p.error_sincronizacion || "-"}</td></tr>`;
+    });
+    html += "</table>";
+    cont.innerHTML = html;
+  } catch (e) { /* silencioso */ }
+}
+
+async function sincronizarOffline() {
+  ocultarMsg("mensaje-offline");
+  try {
+    const resp = await apiFetch("/offline/sincronizar", { method: "POST" });
+    if (resp.sincronizadas > 0) {
+      const detalle = resp.detalle_sincronizadas.map(d => `${d.recibo_provisional} → ${d.ncf_asignado}`).join(", ");
+      mostrarMsg("mensaje-offline", `Sincronizadas ${resp.sincronizadas}: ${detalle}`, "ok");
+    } else if (resp.con_error > 0) {
+      mostrarMsg("mensaje-offline", `Error al sincronizar: ${resp.detalle_errores[0].error}`, "error");
+    } else {
+      mostrarMsg("mensaje-offline", "No hay ventas pendientes de sincronizar.", "ok");
+    }
+    cargarOfflinePendientes();
+    cargarFacturas();
+    cargarSecuenciasNCF();
+  } catch (e) {
+    mostrarMsg("mensaje-offline", e.message, "error");
+  }
 }
 
 // ---------- EMPEÑOS ----------
