@@ -11,6 +11,7 @@ from modules.productos.router import router as productos_router
 from modules.prestamos.router import router as prestamos_router
 from modules.dominios.router import router as dominios_router
 from modules.pos.router import router as pos_router
+from modules.offline.router import router as offline_router
 
 # Crea las tablas en la base de datos si todavía no existen
 Base.metadata.create_all(bind=engine)
@@ -29,6 +30,7 @@ app.include_router(productos_router)
 app.include_router(prestamos_router)
 app.include_router(dominios_router)
 app.include_router(pos_router)
+app.include_router(offline_router)
 
 # Panel visual (frontend) para dueños y cajeros de comercios - vive en /panel
 app.mount("/panel", StaticFiles(directory="static", html=True), name="panel")

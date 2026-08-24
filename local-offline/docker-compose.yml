@@ -1,0 +1,25 @@
+# Corre este archivo desde la RAÍZ del proyecto:
+#   docker compose -f local-offline/docker-compose.yml up -d
+#
+# Esto levanta el sistema en la PC del comercio, usando SQLite local (sin
+# necesidad de internet), en http://localhost:8000
+#
+# Las ventas que se hagan aquí mientras no hay internet quedan guardadas en
+# el archivo rym_multinegocio.db, dentro del volumen "datos_locales". Cuando
+# vuelva la conexión, hay que llamar a POST /offline/sincronizar (con el
+# token del comercio) para que se conviertan en facturas fiscales reales en
+# la nube.
+
+services:
+  jg-facturaciones-local:
+    build:
+      context: ..
+      dockerfile: local-offline/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - datos_locales:/app
+    restart: unless-stopped
+
+volumes:
+  datos_locales:

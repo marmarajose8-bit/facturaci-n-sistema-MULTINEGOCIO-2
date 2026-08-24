@@ -170,3 +170,23 @@ class Dominio(Base):
     fecha_registro = Column(DateTime, default=datetime.utcnow)
 
     comercio = relationship("Comercio", back_populates="dominios")
+
+
+class VentaPendiente(Base):
+    """
+    Venta hecha mientras el sistema estaba sin internet (modo offline local).
+    No tiene NCF todavía - eso se le asigna recién cuando se sincroniza con la
+    nube, para nunca generar dos NCF distintos para la misma secuencia en dos
+    lugares a la vez. Mientras tanto, al cliente se le da un recibo provisional
+    (no es un comprobante fiscal válido hasta que se sincroniza).
+    """
+    __tablename__ = "ventas_pendientes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    comercio_id = Column(Integer, ForeignKey("comercios.id"), nullable=False, index=True)
+    recibo_provisional = Column(String, nullable=False)  # ej. "OFFLINE-000001", solo para referencia local
+    datos_json = Column(String, nullable=False)  # el payload completo de la venta (tipo_ncf, cliente, items, etc.)
+    fecha_creacion = Column(DateTime, default=datetime.utcnow)
+    sincronizado = Column(String, default="no")  # "si" / "no"
+    ncf_resultante = Column(String, nullable=True)  # se llena al sincronizar exitosamente
+    error_sincronizacion = Column(String, nullable=True)  # se llena si falló al intentar sincronizar

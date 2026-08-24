@@ -129,12 +129,13 @@ def _procesar_items(comercio_id: int, items: List[DetalleItem], db: Session):
     return detalles, productos_a_descontar
 
 
-@router.post("/emitir-factura-rd")
-def emitir_factura_rd(
-    datos: FacturaRD,
-    db: Session = Depends(get_db),
-    comercio_actual: Comercio = Depends(get_comercio_actual),
-):
+def emitir_factura_interno(comercio_actual: Comercio, datos: FacturaRD, db: Session) -> dict:
+    """
+    El corazón de la emisión de factura, sin depender de la petición HTTP.
+    La usa tanto el endpoint normal POST /pos/emitir-factura-rd como el
+    sincronizador de ventas offline (modules/offline/router.py), para no
+    duplicar esta lógica en dos lugares.
+    """
     ncf_generado = _siguiente_ncf(comercio_actual.id, datos.tipo_ncf, db)
     empleado = _identificar_empleado(comercio_actual.id, datos.pin_empleado, db)
     detalles, productos_a_descontar = _procesar_items(comercio_actual.id, datos.items, db)
@@ -157,7 +158,6 @@ def emitir_factura_rd(
     )
     factura.items = detalles
 
-    # Ahora que sabemos que toda la factura es válida, descontamos el stock
     for producto, cantidad in productos_a_descontar:
         producto.stock_actual -= cantidad
         db.add(producto)
@@ -180,6 +180,15 @@ def emitir_factura_rd(
         "metodo_pago": factura.metodo_pago,
         "atendido_por": empleado.nombre if empleado else None,
     }
+
+
+@router.post("/emitir-factura-rd")
+def emitir_factura_rd(
+    datos: FacturaRD,
+    db: Session = Depends(get_db),
+    comercio_actual: Comercio = Depends(get_comercio_actual),
+):
+    return emitir_factura_interno(comercio_actual, datos, db)
 
 
 @router.get("/facturas")
